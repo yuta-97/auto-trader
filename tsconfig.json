@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
-    "target": "es2017",
-    "lib": ["es2017", "DOM", "esnext.asynciterable"],
+    "target": "ESNext",
+    "lib": ["DOM", "ESNext"],
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "forceConsistentCasingInFileNames": true,
@@ -16,10 +17,11 @@
     "noEmit": false,
     "esModuleInterop": true,
     "baseUrl": ".",
+    "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["./src/**/*"],
+  "include": ["./src/**/*", "./src/version.json"],
   "exclude": ["node_modules", "tests"]
 }

@@ -1,4 +1,4 @@
-import { Application, NextFunction, Router } from "express";
+import { Application, Request, Response, NextFunction, Router } from "express";
 
 declare namespace Api {
   export type req = Request;
@@ -9,3 +9,4 @@ declare namespace Api {
 }
 
 export type { Api };
+export type { AccountResponse } from "./accounts";

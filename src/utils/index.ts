@@ -1,0 +1,1 @@
+export { genToken } from "./genToken";

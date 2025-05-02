@@ -1,4 +1,7 @@
+version.json
+
 *.env
+!*test.env
 build/
 # Logs
 logs

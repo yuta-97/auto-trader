@@ -15,4 +15,11 @@ export default function (app: Api.router) {
       message: response,
     });
   });
+
+  route.get("/chance", async (req: Api.req, res: Api.res, next: Api.next) => {
+    const response = await orderService.getChance();
+    res.status(200).json({
+      message: response,
+    });
+  });
 }

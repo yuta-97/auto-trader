@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../config";
 import { sign } from "jsonwebtoken";
 
 const genToken = (payload: Object) => {

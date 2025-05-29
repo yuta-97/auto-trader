@@ -15,9 +15,15 @@
     "config:prod": "cp -av envs/prod.env .env",
     "build:module": "cp -r node_modules build",
     "build": "run-s build:clean build:version build:compile build:module",
-    "test": "jest"
+    "test": "jest",
+    "backtest:collect": "./scripts/run-backtest.sh collect",
+    "backtest:run": "./scripts/run-backtest.sh backtest",
+    "backtest:full": "./scripts/run-backtest.sh full",
+    "backtest:force": "./scripts/run-backtest.sh force",
+    "backtest:verbose": "./scripts/run-backtest.sh verbose"
   },
   "dependencies": {
+    "axios": "^1.9.0",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.5.0",
@@ -25,13 +31,16 @@
     "jsonwebtoken": "^9.0.2",
     "module-alias": "^2.2.3",
     "querystring": "^0.2.1",
-    "uuid": "^11.1.0"
+    "trading-signals": "^6.8.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/module-alias": "^2.0.4",
+    "@types/ws": "^8.18.1",
     "nodemon": "^3.1.9",
     "npm-run-all": "^4.1.5",
     "ts-node": "^10.9.2",

@@ -1,4 +1,5 @@
 version.json
+data/
 
 *.env
 !*test.env

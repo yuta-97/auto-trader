@@ -9,6 +9,9 @@ export { GridAnalyzer } from "../indicators/GridAnalyzer";
 export { TrendBreakout } from "./TrendBreakout";
 export { RsiBollinger } from "./RsiBollinger";
 export { GridTrading } from "./GridTrading";
+export { MomentumBreak } from "./MomentumBreak";
+export { MeanReversion } from "./MeanReversion";
+export { VolumeSpike } from "./VolumeSpike";
 
 // 타입 정의
 export type { VolumeAnalysisConfig } from "../indicators/VolumeAnalyzer";

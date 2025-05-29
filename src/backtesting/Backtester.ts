@@ -177,27 +177,34 @@ export class Backtester {
           currentTrade = this.handleEntry(currentCandle);
         }
       }
-      // 포지션이 있는 경우 - 종료 처리
+      // 포지션이 있는 경우 - 종료 조건 확인
       else if (currentTrade && !currentTrade.exitTime) {
-        const completedTrade = this.handleExit(
-          currentTrade,
-          currentCandle,
-          capital,
-          commission,
+        const shouldExit = await strategy.shouldExit(
+          lookbackCandles,
+          currentTrade.entryPrice,
         );
 
-        // 자본 업데이트
-        equity += completedTrade.profit || 0;
+        if (shouldExit) {
+          const completedTrade = this.handleExit(
+            currentTrade,
+            currentCandle,
+            capital,
+            commission,
+          );
 
-        // 최대 낙폭 계산
-        if (equity > highWaterMark) {
-          highWaterMark = equity;
-        } else if ((highWaterMark - equity) / highWaterMark > drawdown) {
-          drawdown = (highWaterMark - equity) / highWaterMark;
+          // 자본 업데이트
+          equity += completedTrade.profit || 0;
+
+          // 최대 낙폭 계산
+          if (equity > highWaterMark) {
+            highWaterMark = equity;
+          } else if ((highWaterMark - equity) / highWaterMark > drawdown) {
+            drawdown = (highWaterMark - equity) / highWaterMark;
+          }
+
+          trades.push({ ...completedTrade });
+          currentTrade = null;
         }
-
-        trades.push({ ...completedTrade });
-        currentTrade = null;
       }
     }
 

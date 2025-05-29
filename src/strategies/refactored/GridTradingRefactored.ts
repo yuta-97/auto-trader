@@ -1,11 +1,15 @@
-import { ATR } from "trading-signals";
+/**
+ * 그리드 트레이딩 전략 (리팩토링 버전)
+ * 깔끔한 구조와 모듈화된 컴포넌트 사용
+ */
+import { SMA, ATR } from "trading-signals";
 import { Candle } from "../type";
 import { UpbitClient } from "@/api/upbitClient";
 import { BaseStrategy } from "../base/BaseStrategy";
 import { GridAnalyzer, GridConfig } from "../indicators/GridAnalyzer";
 
-export class GridTrading extends BaseStrategy {
-  name = "그리드";
+export class GridTradingRefactored extends BaseStrategy {
+  name = "그리드 (개선)";
 
   private config: GridConfig;
   private gridAnalyzer: GridAnalyzer;
@@ -16,15 +20,15 @@ export class GridTrading extends BaseStrategy {
   constructor(client: UpbitClient, config?: Partial<GridConfig>) {
     super(client);
 
-    // 기본 설정 (진입 조건 완화)
+    // 기본 설정
     this.config = {
-      gridCount: 3, // 5 → 3으로 완화
-      minRangePct: 0.015, // 0.02 → 0.015로 완화
-      volatilityThreshold: 0.25, // 0.15 → 0.25로 완화 (더 높은 변동성 허용)
-      gridStepMultiplier: 0.3, // 0.5 → 0.3으로 완화
-      volumeAnalysisPeriod: 50, // 100 → 50으로 단축
-      volumeTrendPeriod: 10, // 20 → 10으로 단축
-      volumeEfficiencyThreshold: 0.4, // 0.6 → 0.4로 완화
+      gridCount: 5,
+      minRangePct: 0.02,
+      volatilityThreshold: 0.15,
+      gridStepMultiplier: 0.5,
+      volumeAnalysisPeriod: 100,
+      volumeTrendPeriod: 20,
+      volumeEfficiencyThreshold: 0.6,
       ...config,
     };
 
@@ -112,8 +116,8 @@ export class GridTrading extends BaseStrategy {
     volume: number,
     candles: Candle[],
   ): Promise<void> {
-    const { atrValue } = this.checkGridConditions(candles);
-    const currentPrice = candles.at(-1).close;
+    const { gridLevels, atrValue } = this.checkGridConditions(candles);
+    const currentPrice = candles.at(-1)!.close;
 
     // 그리드 간격 계산
     const gridSpacing = this.gridAnalyzer.calculateGridSpacing(
@@ -163,31 +167,5 @@ export class GridTrading extends BaseStrategy {
         `매도레벨: ${sellLevels.map(l => l.toFixed(0)).join(", ")}`,
       );
     }
-  }
-
-  /**
-   * 종료 조건 판단 (그리드 전략은 기본적으로 계속 실행)
-   */
-  async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    // 그리드 전략은 대부분 계속 실행되지만, 극단적인 변동성이나 손실에서는 중단
-    const currentPrice = candles.at(-1)!.close;
-
-    // 20% 이상 손실이면 중단
-    const lossThreshold = entryPrice * 0.8;
-    if (currentPrice <= lossThreshold) {
-      return true;
-    }
-
-    // 변동성이 너무 높으면 중단 (ATR 기준)
-    const atrValue = this.atr.getResult();
-    if (atrValue) {
-      const atrPercent = Number(atrValue) / currentPrice;
-      if (atrPercent > 0.1) {
-        // 10% 이상 변동성
-        return true;
-      }
-    }
-
-    return false;
   }
 }

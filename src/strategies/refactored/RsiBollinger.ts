@@ -1,3 +1,7 @@
+/**
+ * RSI + 볼린저 밴드 역추세 전략 (리팩토링 버전)
+ * 깔끔한 구조와 모듈화된 컴포넌트 사용
+ */
 import { RSI, BollingerBands, ATR } from "trading-signals";
 import { Candle } from "../type";
 import { UpbitClient } from "@/api/upbitClient";
@@ -34,20 +38,20 @@ export class RsiBollinger extends BaseStrategy {
   constructor(client: UpbitClient, config?: Partial<RsiBollingerConfig>) {
     super(client);
 
-    // 기본 설정 (대폭 완화)
+    // 기본 설정
     this.config = {
       rsiPeriod: 14,
-      rsiOversold: 40, // 35 → 40으로 더 완화
+      rsiOversold: 30,
       bbPeriod: 20,
-      bbStdDev: 1.8, // 2 → 1.8로 완화 (더 쉽게 터치)
-      profitFactorMin: 1.2, // 1.5 → 1.2로 완화
+      bbStdDev: 2,
+      profitFactorMin: 1.5,
       atrMultiplierProfit: 2,
       atrMultiplierStop: 1,
-      minVolumeSignals: 0, // 1 → 0으로 완화 (거래량 조건 무시)
+      minVolumeSignals: 2,
       volumeConfig: {
-        volumeThreshold: 1.0, // 기본값으로 완화
-        volumeRatio: 1.0,
-        adlConfirmation: false,
+        volumeThreshold: 1.5,
+        volumeRatio: 1.5,
+        adlConfirmation: true,
         obvConfirmation: false,
       },
       ...config,
@@ -95,7 +99,7 @@ export class RsiBollinger extends BaseStrategy {
 
     const currentRSI = Number(rsiValue);
     const bbLower = Number(bbResult.lower);
-    const currentPrice = candles.at(-1).close;
+    const currentPrice = candles.at(-1)!.close;
 
     return currentRSI <= this.config.rsiOversold && currentPrice < bbLower;
   }
@@ -142,7 +146,7 @@ export class RsiBollinger extends BaseStrategy {
     volume: number,
     candles: Candle[],
   ): Promise<void> {
-    const entryPrice = candles.at(-1).close;
+    const entryPrice = candles.at(-1)!.close;
 
     // ATR 기반 목표가/손절가 계산
     const atrValue = this.atr.getResult();
@@ -179,24 +183,5 @@ export class RsiBollinger extends BaseStrategy {
       volumeStrength,
       volumeRatio,
     );
-  }
-
-  /**
-   * 종료 조건 판단
-   */
-  async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    const currentPrice = candles.at(-1)!.close;
-
-    // ATR 기반 동적 스톱로스/목표가 계산
-    const atrValue = this.atr.getResult();
-    const { targetPrice, stopLossPrice } = this.calculateTargetLevels(
-      candles,
-      atrValue,
-      this.config.atrMultiplierProfit,
-      this.config.atrMultiplierStop,
-    );
-
-    // 목표가 달성 또는 손절가 터치
-    return currentPrice >= targetPrice || currentPrice <= stopLossPrice;
   }
 }

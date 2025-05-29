@@ -1,3 +1,7 @@
+/**
+ * 추세 돌파 전략
+ * 깔끔한 구조와 모듈화된 컴포넌트 사용
+ */
 import { ATR, SMA, EMA } from "trading-signals";
 import { Candle } from "../type";
 import { UpbitClient } from "@/api/upbitClient";
@@ -36,23 +40,23 @@ export class TrendBreakout extends BaseStrategy {
   constructor(client: UpbitClient, config?: Partial<TrendBreakoutConfig>) {
     super(client);
 
-    // 기본 설정 (대폭 완화)
+    // 기본 설정
     this.config = {
-      lookbackPeriod: 10, // 15 → 10으로 단축
+      lookbackPeriod: 20,
       stopFactor: 2,
       profitFactor: 3,
-      consecutiveCandlesUp: 1,
-      maPeriod: 10, // 20 → 10으로 단축
-      volumeEmaPeriod: 10, // 20 → 10으로 단축
+      consecutiveCandlesUp: 2,
+      maPeriod: 20,
+      volumeEmaPeriod: 20,
       vwapPeriod: 20,
-      useMaFilter: false, // MA 필터도 비활성화
-      useVwapFilter: false,
-      useVolumeBreakout: false,
+      useMaFilter: true,
+      useVwapFilter: true,
+      useVolumeBreakout: true,
       volumeConfig: {
-        volumeThreshold: 1.0, // 1.2 → 1.0으로 완화 (기본 조건만)
-        volumeRatio: 1.0, // 1.3 → 1.0으로 완화
+        volumeThreshold: 1.5,
+        volumeRatio: 1.5,
         adlConfirmation: false,
-        obvConfirmation: false,
+        obvConfirmation: true,
       },
       ...config,
     };
@@ -109,7 +113,7 @@ export class TrendBreakout extends BaseStrategy {
     if (this.config.useMaFilter) {
       const smaResult = this.sma.getResult();
       if (smaResult) {
-        const currentPrice = candles.at(-1).close;
+        const currentPrice = candles.at(-1)!.close;
         const smaValue = Number(smaResult);
         if (currentPrice <= smaValue) return false;
       }
@@ -130,7 +134,7 @@ export class TrendBreakout extends BaseStrategy {
     );
     if (vwap === 0) return true;
 
-    const currentPrice = candles.at(-1).close;
+    const currentPrice = candles.at(-1)!.close;
     return currentPrice > vwap;
   }
 
@@ -150,31 +154,33 @@ export class TrendBreakout extends BaseStrategy {
       this.updateIndicators(fromIndex, toIndex, candles);
     });
 
-    // 1. 추세 강도 검증 (옵션)
-    if (this.config.useMaFilter) {
-      const trendStrengthOk = this.checkTrendStrength(candles);
-      if (!trendStrengthOk) return false;
-    }
+    // 1. 추세 강도 검증
+    const trendStrengthOk = this.checkTrendStrength(candles);
+    if (!trendStrengthOk) return false;
 
-    // 2. 간단한 상승 확인으로 대체
-    const recentCandles = candles.slice(-this.config.consecutiveCandlesUp - 1);
-    for (let i = 1; i <= this.config.consecutiveCandlesUp; i++) {
-      if (
-        recentCandles[recentCandles.length - i].close <=
-        recentCandles[recentCandles.length - i - 1].close
-      ) {
-        return false;
-      }
-    }
-
-    // 3. 거래량 강도 확인 (30% 이상으로 대폭 완화)
+    // 2. 거래량 분석
     const volumeEmaValue = Number(this.volumeEma.getResult() || 0);
     const volumeAnalysis = this.volumeAnalyzer.analyzeVolumeSignals(
       candles,
       volumeEmaValue,
     );
 
-    if (volumeAnalysis.volumeStrength < 30) {
+    // 거래량 돌파 확인
+    if (this.config.useVolumeBreakout && !volumeAnalysis.hasVolumeBreakout) {
+      return false;
+    }
+
+    // OBV 확인
+    if (!volumeAnalysis.obvConfirmed) {
+      return false;
+    }
+
+    // 3. VWAP 필터
+    const vwapFilterOk = this.checkVWAPFilter(candles);
+    if (!vwapFilterOk) return false;
+
+    // 4. 거래량 강도 확인 (60% 이상)
+    if (volumeAnalysis.volumeStrength < 60) {
       return false;
     }
 
@@ -190,7 +196,7 @@ export class TrendBreakout extends BaseStrategy {
     volume: number,
     candles: Candle[],
   ): Promise<void> {
-    const entryPrice = candles.at(-1).close;
+    const entryPrice = candles.at(-1)!.close;
 
     // ATR 기반 목표가/손절가 계산
     const atrValue = this.atr.getResult();
@@ -224,24 +230,5 @@ export class TrendBreakout extends BaseStrategy {
         volumeRatio,
       );
     }
-  }
-
-  /**
-   * 종료 조건 판단
-   */
-  async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    const currentPrice = candles.at(-1)!.close;
-
-    // ATR 기반 동적 스톱로스/목표가 계산
-    const atrValue = this.atr.getResult();
-    const { targetPrice, stopLossPrice } = this.calculateTargetLevels(
-      candles,
-      atrValue,
-      this.config.profitFactor,
-      this.config.stopFactor,
-    );
-
-    // 목표가 달성 또는 손절가 터치
-    return currentPrice >= targetPrice || currentPrice <= stopLossPrice;
   }
 }

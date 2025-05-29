@@ -151,6 +151,20 @@ export abstract class BaseStrategy implements Strategy {
     );
   }
 
+  /**
+   * 기본 종료 조건 (각 전략에서 오버라이드 가능)
+   * 간단한 스톱로스/목표가 로직
+   */
+  async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
+    const currentPrice = candles.at(-1)!.close;
+
+    // 기본 3% 손절, 6% 익절
+    const stopLoss = entryPrice * 0.97;
+    const takeProfit = entryPrice * 1.06;
+
+    return currentPrice <= stopLoss || currentPrice >= takeProfit;
+  }
+
   // 추상 메서드들
   abstract shouldEnter(candles: Candle[]): Promise<boolean>;
   abstract execute(

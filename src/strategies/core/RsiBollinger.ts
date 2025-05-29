@@ -2,11 +2,6 @@ import { RSI, BollingerBands, ATR } from "trading-signals";
 import { Candle } from "../type";
 import { UpbitClient } from "@/api/upbitClient";
 import { BaseStrategy } from "../base/BaseStrategy";
-import {
-  VolumeAnalyzer,
-  VolumeAnalysisConfig,
-} from "../indicators/VolumeAnalyzer";
-import { TechnicalIndicators } from "../indicators/TechnicalIndicators";
 
 export interface RsiBollingerConfig {
   rsiPeriod: number;
@@ -16,15 +11,12 @@ export interface RsiBollingerConfig {
   profitFactorMin: number;
   atrMultiplierProfit: number;
   atrMultiplierStop: number;
-  volumeConfig: VolumeAnalysisConfig;
-  minVolumeSignals: number; // 최소 거래량 신호 개수
 }
 
 export class RsiBollinger extends BaseStrategy {
-  name = "RSI·볼린저 역추세 (개선)";
+  name = "RSI·볼린저 역추세 (단순화)";
 
   private config: RsiBollingerConfig;
-  private volumeAnalyzer: VolumeAnalyzer;
 
   // 지표 인스턴스
   private rsi: RSI;
@@ -34,26 +26,17 @@ export class RsiBollinger extends BaseStrategy {
   constructor(client: UpbitClient, config?: Partial<RsiBollingerConfig>) {
     super(client);
 
-    // 기본 설정 (대폭 완화)
+    // 기본 설정 (거래량 의존성 제거, 조건 완화)
     this.config = {
       rsiPeriod: 14,
-      rsiOversold: 40, // 35 → 40으로 더 완화
+      rsiOversold: 50, // 45 → 50으로 더 완화
       bbPeriod: 20,
-      bbStdDev: 1.8, // 2 → 1.8로 완화 (더 쉽게 터치)
-      profitFactorMin: 1.2, // 1.5 → 1.2로 완화
+      bbStdDev: 1.2, // 1.5 → 1.2로 더 완화 (볼린저밴드를 더 좁게)
+      profitFactorMin: 1.2,
       atrMultiplierProfit: 2,
       atrMultiplierStop: 1,
-      minVolumeSignals: 0, // 1 → 0으로 완화 (거래량 조건 무시)
-      volumeConfig: {
-        volumeThreshold: 1.0, // 기본값으로 완화
-        volumeRatio: 1.0,
-        adlConfirmation: false,
-        obvConfirmation: false,
-      },
       ...config,
     };
-
-    this.volumeAnalyzer = new VolumeAnalyzer(this.config.volumeConfig);
 
     // 지표 초기화
     this.rsi = new RSI(this.config.rsiPeriod);
@@ -62,7 +45,7 @@ export class RsiBollinger extends BaseStrategy {
   }
 
   /**
-   * 지표 업데이트 (성능 최적화 적용)
+   * 지표 업데이트
    */
   private updateIndicators(
     fromIndex: number,
@@ -84,57 +67,65 @@ export class RsiBollinger extends BaseStrategy {
     }
   }
 
-  /**
-   * 기본 RSI + 볼린저 밴드 조건 확인
-   */
-  private checkBasicConditions(candles: Candle[]): boolean {
-    const rsiValue = this.rsi.getResult();
-    const bbResult = this.bb.getResult();
-
-    if (!rsiValue || !bbResult) return false;
-
-    const currentRSI = Number(rsiValue);
-    const bbLower = Number(bbResult.lower);
-    const currentPrice = candles.at(-1).close;
-
-    return currentRSI <= this.config.rsiOversold && currentPrice < bbLower;
-  }
-
-  /**
-   * 볼린저 밴드 중앙선을 고려한 목표가 조정
-   */
-  private adjustTargetWithBB(targetPrice: number): number {
-    const bbResult = this.bb.getResult();
-    if (bbResult) {
-      const bbTarget = Number(bbResult.middle);
-      return Math.min(targetPrice, bbTarget);
-    }
-    return targetPrice;
-  }
-
   async shouldEnter(candles: Candle[]): Promise<boolean> {
     if (
       candles.length <
-      Math.max(this.config.rsiPeriod, this.config.bbPeriod) + 10
+      Math.max(this.config.rsiPeriod, this.config.bbPeriod) + 5
     ) {
+      if (this.verbose) {
+        console.log("RsiBollinger: 충분한 데이터가 없음");
+      }
       return false;
     }
 
-    // 성능 최적화: 증분 지표 업데이트
+    // 지표 업데이트
     this.updateIndicatorsOptimized(candles, (fromIndex, toIndex) => {
       this.updateIndicators(fromIndex, toIndex, candles);
     });
 
-    // 1. 기본 조건: RSI 과매도 + 볼린저 밴드 하단 돌파
-    if (!this.checkBasicConditions(candles)) {
+    const currentPrice = candles.at(-1).close;
+    const rsiValue = Number(this.rsi.getResult() || 0);
+    const bbResult = this.bb.getResult();
+
+    // 1. RSI 과매도 조건 (매우 완화)
+    if (rsiValue > this.config.rsiOversold) {
+      if (this.verbose) {
+        console.log(
+          `RsiBollinger: RSI(${rsiValue}) > ${this.config.rsiOversold}`,
+        );
+      }
       return false;
     }
 
-    // 2. 거래량 분석
-    const volumeAnalysis = this.volumeAnalyzer.analyzeVolumeSignals(candles);
+    // 2. 볼린저밴드 조건을 매우 완화 (하단밴드의 120% 이내)
+    if (!bbResult) {
+      if (this.verbose) {
+        console.log("RsiBollinger: 볼린저밴드 데이터 부족");
+      }
+      return false;
+    }
 
-    // 최소 거래량 신호 개수 만족 확인
-    return volumeAnalysis.signalCount >= this.config.minVolumeSignals;
+    const lowerBand = Number(bbResult.lower);
+    const upperBand = Number(bbResult.upper);
+    const middle = Number(bbResult.middle);
+
+    // 현재 가격이 중간선 아래에 있으면 OK (매우 완화)
+    if (currentPrice > middle) {
+      if (this.verbose) {
+        console.log(
+          `RsiBollinger: 가격(${currentPrice})이 중간선(${middle}) 위에 있음`,
+        );
+      }
+      return false;
+    }
+
+    if (this.verbose) {
+      console.log(
+        `RsiBollinger: 진입 조건 만족 - RSI: ${rsiValue}, 가격: ${currentPrice}, 하단밴드: ${lowerBand}`,
+      );
+    }
+
+    return true;
   }
 
   async execute(
@@ -146,48 +137,32 @@ export class RsiBollinger extends BaseStrategy {
 
     // ATR 기반 목표가/손절가 계산
     const atrValue = this.atr.getResult();
-    let { targetPrice, stopLossPrice } = this.calculateTargetLevels(
+    const { targetPrice, stopLossPrice } = this.calculateTargetLevels(
       candles,
       atrValue,
       this.config.atrMultiplierProfit,
       this.config.atrMultiplierStop,
-      this.config.profitFactorMin,
     );
-
-    // 볼린저 밴드 중앙선을 고려한 목표가 조정
-    targetPrice = this.adjustTargetWithBB(targetPrice);
-
-    // 거래량 강도에 따른 포지션 사이징
-    const volumeStrength =
-      TechnicalIndicators.calculateBuyingSellingSPressure(candles);
-    const volumeRatio = this.calculatePositionSizing(volumeStrength);
 
     // 주문 실행
     await this.executeOrders(market, volume, {
       entryPrice,
       targetPrice,
       stopLossPrice,
-      volumeRatio,
+      volumeRatio: 1.0,
     });
 
-    // 로그 출력
-    this.logTrade(
-      market,
-      entryPrice,
-      targetPrice,
-      stopLossPrice,
-      volumeStrength,
-      volumeRatio,
-    );
+    if (this.verbose) {
+      console.log(
+        `RsiBollinger: ${market} 진입 - 가격: ${entryPrice}, 목표: ${targetPrice}, 손절: ${stopLossPrice}`,
+      );
+    }
   }
 
-  /**
-   * 종료 조건 판단
-   */
   async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    const currentPrice = candles.at(-1)!.close;
+    const currentPrice = candles.at(-1).close;
 
-    // ATR 기반 동적 스톱로스/목표가 계산
+    // ATR 기반 동적 목표가/손절가
     const atrValue = this.atr.getResult();
     const { targetPrice, stopLossPrice } = this.calculateTargetLevels(
       candles,
@@ -196,7 +171,17 @@ export class RsiBollinger extends BaseStrategy {
       this.config.atrMultiplierStop,
     );
 
-    // 목표가 달성 또는 손절가 터치
+    // RSI 기반 추가 종료 조건 (RSI가 70 이상으로 과매수 영역 진입시)
+    const rsiValue = Number(this.rsi.getResult() || 0);
+    if (rsiValue > 70) {
+      if (this.verbose) {
+        console.log(
+          `RsiBollinger: RSI 과매수 영역 도달로 종료 - RSI: ${rsiValue}`,
+        );
+      }
+      return true;
+    }
+
     return currentPrice >= targetPrice || currentPrice <= stopLossPrice;
   }
 }

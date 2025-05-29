@@ -37,27 +37,19 @@ async function runBacktestStrategies(verbose: boolean = false) {
   // 더미 클라이언트 (백테스트에서는 실제 API 호출 안함)
   const client = {} as UpbitClient;
 
-  // 전략들 초기화
+  // 전략들 초기화 (극단적으로 완화된 조건)
   const strategies = [
     new TrendBreakout(client, {
-      profitFactor: 2.5,
-      stopFactor: 1.5,
-      volumeConfig: {
-        volumeThreshold: 1.3,
-        volumeRatio: 1.4,
-        obvConfirmation: true,
-        adlConfirmation: false,
-      },
+      profitFactor: 1.5, // 2.0 → 1.5로 더 완화
+      stopFactor: 1.0, // 1.2 → 1.0으로 완화
+      useMaFilter: false,
+      consecutiveCandlesUp: 1,
+      lookbackPeriod: 5, // 10 → 5로 단축
     }),
     new RsiBollinger(client, {
-      rsiOversold: 25,
-      minVolumeSignals: 3,
-      volumeConfig: {
-        volumeThreshold: 1.2,
-        volumeRatio: 1.3,
-        adlConfirmation: true,
-        obvConfirmation: false,
-      },
+      rsiOversold: 60, // 55 → 60으로 더 완화
+      bbStdDev: 0.8, // 1.0 → 0.8로 더 완화
+      profitFactorMin: 1.05, // 1.1 → 1.05로 완화
     }),
     new GridTrading(client, {
       gridCount: 7,

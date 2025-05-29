@@ -1,12 +1,7 @@
-import { ATR, SMA, EMA } from "trading-signals";
+import { ATR, SMA } from "trading-signals";
 import { Candle } from "../type";
 import { UpbitClient } from "@/api/upbitClient";
 import { BaseStrategy } from "../base/BaseStrategy";
-import {
-  VolumeAnalyzer,
-  VolumeAnalysisConfig,
-} from "../indicators/VolumeAnalyzer";
-import { TechnicalIndicators } from "../indicators/TechnicalIndicators";
 
 export interface TrendBreakoutConfig {
   lookbackPeriod: number;
@@ -14,59 +9,39 @@ export interface TrendBreakoutConfig {
   profitFactor: number;
   consecutiveCandlesUp: number;
   maPeriod: number;
-  volumeEmaPeriod: number;
-  vwapPeriod: number;
   useMaFilter: boolean;
-  useVwapFilter: boolean;
-  useVolumeBreakout: boolean;
-  volumeConfig: VolumeAnalysisConfig;
 }
 
 export class TrendBreakout extends BaseStrategy {
-  name = "추세 돌파 (개선)";
+  name = "추세 돌파 (단순화)";
 
   private config: TrendBreakoutConfig;
-  private volumeAnalyzer: VolumeAnalyzer;
 
   // 지표 인스턴스
   private atr: ATR;
   private sma: SMA;
-  private volumeEma: EMA;
 
   constructor(client: UpbitClient, config?: Partial<TrendBreakoutConfig>) {
     super(client);
 
-    // 기본 설정 (대폭 완화)
+    // 기본 설정 (단순화된 버전)
     this.config = {
-      lookbackPeriod: 10, // 15 → 10으로 단축
+      lookbackPeriod: 10,
       stopFactor: 2,
       profitFactor: 3,
       consecutiveCandlesUp: 1,
-      maPeriod: 10, // 20 → 10으로 단축
-      volumeEmaPeriod: 10, // 20 → 10으로 단축
-      vwapPeriod: 20,
-      useMaFilter: false, // MA 필터도 비활성화
-      useVwapFilter: false,
-      useVolumeBreakout: false,
-      volumeConfig: {
-        volumeThreshold: 1.0, // 1.2 → 1.0으로 완화 (기본 조건만)
-        volumeRatio: 1.0, // 1.3 → 1.0으로 완화
-        adlConfirmation: false,
-        obvConfirmation: false,
-      },
+      maPeriod: 10,
+      useMaFilter: false, // 거래량/복잡한 필터 제거
       ...config,
     };
-
-    this.volumeAnalyzer = new VolumeAnalyzer(this.config.volumeConfig);
 
     // 지표 초기화
     this.atr = new ATR(14);
     this.sma = new SMA(this.config.maPeriod);
-    this.volumeEma = new EMA(this.config.volumeEmaPeriod);
   }
 
   /**
-   * 지표 업데이트 (성능 최적화 적용)
+   * 지표 업데이트
    */
   private updateIndicators(
     fromIndex: number,
@@ -84,12 +59,11 @@ export class TrendBreakout extends BaseStrategy {
         false,
       );
       this.sma.update(candle.close, false);
-      this.volumeEma.update(candle.volume || 0, false);
     }
   }
 
   /**
-   * 추세 강도 검증
+   * 추세 강도 검증 (단순화)
    */
   private checkTrendStrength(candles: Candle[]): boolean {
     if (candles.length < this.config.maPeriod) return false;
@@ -105,7 +79,7 @@ export class TrendBreakout extends BaseStrategy {
       }
     }
 
-    // 이동평균 필터
+    // 이동평균 필터 (옵션)
     if (this.config.useMaFilter) {
       const smaResult = this.sma.getResult();
       if (smaResult) {
@@ -116,22 +90,6 @@ export class TrendBreakout extends BaseStrategy {
     }
 
     return true;
-  }
-
-  /**
-   * VWAP 필터
-   */
-  private checkVWAPFilter(candles: Candle[]): boolean {
-    if (!this.config.useVwapFilter) return true;
-
-    const vwap = TechnicalIndicators.calculateVWAP(
-      candles,
-      this.config.vwapPeriod,
-    );
-    if (vwap === 0) return true;
-
-    const currentPrice = candles.at(-1).close;
-    return currentPrice > vwap;
   }
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
@@ -145,41 +103,38 @@ export class TrendBreakout extends BaseStrategy {
       return false;
     }
 
-    // 성능 최적화: 증분 지표 업데이트
+    // 지표 업데이트
     this.updateIndicatorsOptimized(candles, (fromIndex, toIndex) => {
       this.updateIndicators(fromIndex, toIndex, candles);
     });
 
-    // 1. 추세 강도 검증 (옵션)
-    if (this.config.useMaFilter) {
-      const trendStrengthOk = this.checkTrendStrength(candles);
-      if (!trendStrengthOk) return false;
-    }
-
-    // 2. 간단한 상승 확인으로 대체
+    // 1. 단순한 상승 확인만 (모든 복잡한 조건 제거)
     const recentCandles = candles.slice(-this.config.consecutiveCandlesUp - 1);
     for (let i = 1; i <= this.config.consecutiveCandlesUp; i++) {
       if (
         recentCandles[recentCandles.length - i].close <=
         recentCandles[recentCandles.length - i - 1].close
       ) {
+        if (this.verbose) {
+          console.log("TrendBreakout: 연속 상승 조건 불만족");
+        }
         return false;
       }
     }
 
-    // 3. 거래량 강도 확인 (30% 이상으로 대폭 완화)
-    const volumeEmaValue = Number(this.volumeEma.getResult() || 0);
-    const volumeAnalysis = this.volumeAnalyzer.analyzeVolumeSignals(
-      candles,
-      volumeEmaValue,
-    );
-
-    if (volumeAnalysis.volumeStrength < 30) {
+    // 2. 추가 조건: 최근 거래량이 있는지만 확인 (단순한 필터)
+    const currentCandle = candles.at(-1);
+    if (!currentCandle.volume || currentCandle.volume <= 0) {
+      if (this.verbose) {
+        console.log("TrendBreakout: 거래량 없음");
+      }
       return false;
     }
 
     if (this.verbose) {
-      console.log("TrendBreakout: 모든 조건 만족 - 진입 신호 발생!");
+      console.log(
+        `TrendBreakout: 진입 조건 만족 - 가격: ${currentCandle.close}`,
+      );
     }
 
     return true;
@@ -201,27 +156,18 @@ export class TrendBreakout extends BaseStrategy {
       this.config.stopFactor,
     );
 
-    // 거래량 강도에 따른 포지션 사이징
-    const volumeStrength = TechnicalIndicators.analyzeVolumeStrength(candles);
-    const volumeRatio = this.calculatePositionSizing(volumeStrength);
-
-    // 주문 실행
+    // 주문 실행 (단순화된 버전)
     await this.executeOrders(market, volume, {
       entryPrice,
       targetPrice,
       stopLossPrice,
-      volumeRatio,
+      volumeRatio: 1.0, // 고정 비율
     });
 
     // 로그 출력
     if (this.verbose) {
-      this.logTrade(
-        market,
-        entryPrice,
-        targetPrice,
-        stopLossPrice,
-        volumeStrength,
-        volumeRatio,
+      console.log(
+        `TrendBreakout: ${market} 진입 - 가격: ${entryPrice}, 목표: ${targetPrice}, 손절: ${stopLossPrice}`,
       );
     }
   }
@@ -230,7 +176,7 @@ export class TrendBreakout extends BaseStrategy {
    * 종료 조건 판단
    */
   async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    const currentPrice = candles.at(-1)!.close;
+    const currentPrice = candles.at(-1).close;
 
     // ATR 기반 동적 스톱로스/목표가 계산
     const atrValue = this.atr.getResult();

@@ -13,23 +13,8 @@ import {
   VolumeSpike,
 } from "../strategies/core";
 import path from "path";
-import { MARKETS, CANDLE_INTERVAL } from "../strategies/constants";
 import fs from "fs";
-
-// ===== 백테스트 설정 (직접 수정해서 사용) =====
-const BACKTEST_CONFIG = {
-  // 테스트할 마켓 (MARKETS.BTC, MARKETS.ETH 등)
-  MARKET: MARKETS.XRP,
-
-  // 캔들 간격 (CANDLE_INTERVAL.MIN_3, MIN_5, MIN_15, MIN_30 등)
-  INTERVAL: CANDLE_INTERVAL.MIN_1,
-
-  // 초기 자본 (원)
-  INITIAL_CAPITAL: 1000000, // 100만원
-
-  // 백테스트 기간 (일)
-  DAYS: 1,
-};
+import { BACKTEST_CONFIG, STRATEGY_CONFIG } from "./config";
 
 /**
  * 데이터 수집만 실행
@@ -100,50 +85,14 @@ async function runBacktestStrategies(verbose: boolean = false) {
   // 더미 클라이언트 (백테스트에서는 실제 API 호출 안함)
   const client = {} as UpbitClient;
 
-  // 전략들 초기화 (극단적으로 완화된 조건)
+  // 전략들 초기화 (백테스트 모드로)
   const strategies = [
-    new TrendBreakout(client, {
-      profitFactor: 1.2, // 1.3 → 1.2로 더 완화
-      stopFactor: 0.5, // 0.8 → 0.5로 더 완화 (손절 더 빠르게)
-      useMaFilter: false,
-      consecutiveCandlesUp: 1, // 1개 캔들만 상승하면 OK
-      lookbackPeriod: 3, // 3 → 1로 극단적 단축
-    }),
-    new RsiBollinger(client, {
-      rsiOversold: 70, // 65 → 70으로 극단적 완화
-      bbStdDev: 0.3, // 0.5 → 0.3으로 더 완화 (매우 좁은 밴드)
-      profitFactorMin: 1.01, // 1.02 → 1.01로 극단적 완화
-      atrMultiplierProfit: 1.0, // 1.2 → 1.0으로 완화
-      atrMultiplierStop: 0.5, // 0.8 → 0.5로 완화
-    }),
-    new GridTrading(client, {
-      gridCount: 7,
-      volatilityThreshold: 0.12,
-      volumeEfficiencyThreshold: 0.7,
-    }),
-    new MomentumBreak(client, {
-      shortEmaPeriod: 3, // 5 → 3으로 단축 (더 빠른 반응)
-      longEmaPeriod: 10, // 20 → 10으로 단축
-      minPriceChange: 0.05, // 0.1% → 0.05%로 더 완화
-      profitFactor: 1.5, // 2.0 → 1.5로 완화
-      stopFactor: 1.0, // 1.5 → 1.0으로 완화
-    }),
-    new MeanReversion(client, {
-      emaPeriod: 20,
-      deviationThreshold: 1.0, // 이동평균에서 1% 이상 하락 (완화)
-      rsiPeriod: 14,
-      rsiOversold: 50, // 50으로 완화
-      profitFactor: 1.5,
-      stopFactor: 2.0,
-    }),
-    new VolumeSpike(client, {
-      volumeEmaPeriod: 20,
-      volumeSpikeMultiplier: 2.0, // 평균 거래량의 2배 이상
-      priceEmaPeriod: 10,
-      minPriceGain: 1.0, // 1% 이상 상승
-      profitFactor: 2.5,
-      stopFactor: 1.5,
-    }),
+    new TrendBreakout(client, STRATEGY_CONFIG.TREND_BREAKOUT, true),
+    new RsiBollinger(client, STRATEGY_CONFIG.RSI_BOLLINGER, true),
+    new GridTrading(client, STRATEGY_CONFIG.GRID_TRADING, true),
+    new MomentumBreak(client, STRATEGY_CONFIG.MOMENTUM_BREAK, true),
+    new MeanReversion(client, STRATEGY_CONFIG.MEAN_REVERSION, true),
+    new VolumeSpike(client, STRATEGY_CONFIG.VOLUME_SPIKE, true),
   ];
 
   console.log(`\n📊 ${BACKTEST_CONFIG.MARKET} 백테스트 결과:`);

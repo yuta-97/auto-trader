@@ -22,8 +22,12 @@ export class MomentumBreak extends BaseStrategy {
   private shortEma: EMA;
   private longEma: EMA;
 
-  constructor(client: UpbitClient, config: MomentumBreakConfig) {
-    super(client);
+  constructor(
+    client: UpbitClient,
+    config: MomentumBreakConfig,
+    isBacktest: boolean = false,
+  ) {
+    super(client, isBacktest);
     this.config = config;
     this.shortEma = new EMA(this.config.shortEmaPeriod);
     this.longEma = new EMA(this.config.longEmaPeriod);

@@ -174,6 +174,8 @@ export class Backtester {
       if (!currentTrade) {
         const shouldEnter = await strategy.shouldEnter(lookbackCandles);
         if (shouldEnter) {
+          // 전략의 execute 메서드도 호출
+          await strategy.execute(market, currentCandle.volume, lookbackCandles);
           currentTrade = this.handleEntry(currentCandle);
         }
       }

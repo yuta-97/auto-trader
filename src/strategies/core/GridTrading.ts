@@ -13,8 +13,12 @@ export class GridTrading extends BaseStrategy {
   // 지표 인스턴스
   private atr: ATR;
 
-  constructor(client: UpbitClient, config?: Partial<GridConfig>) {
-    super(client);
+  constructor(
+    client: UpbitClient,
+    config?: Partial<GridConfig>,
+    isBacktest: boolean = false,
+  ) {
+    super(client, isBacktest);
 
     // 기본 설정 (진입 조건 완화)
     this.config = {
@@ -133,6 +137,16 @@ export class GridTrading extends BaseStrategy {
     // 거래량을 그리드 수로 분할
     const gridVolume = volume / this.config.gridCount;
 
+    // 백테스트 모드에서는 실제 주문 실행하지 않음
+    if (this.isBacktest) {
+      if (this.verbose) {
+        console.log(
+          `[${this.name}] 백테스트 모드: 그리드 주문 시뮬레이션 - ${market}, 그리드 수: ${this.config.gridCount}`,
+        );
+      }
+      return;
+    }
+
     // 매수 그리드 주문
     for (const buyLevel of buyLevels) {
       await this.client.createOrder({
@@ -170,7 +184,7 @@ export class GridTrading extends BaseStrategy {
    */
   async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
     // 그리드 전략은 대부분 계속 실행되지만, 극단적인 변동성이나 손실에서는 중단
-    const currentPrice = candles.at(-1)!.close;
+    const currentPrice = candles.at(-1).close;
 
     // 20% 이상 손실이면 중단
     const lossThreshold = entryPrice * 0.8;

@@ -28,9 +28,11 @@ export abstract class BaseStrategy implements Strategy {
   protected client: UpbitClient;
   protected lastProcessedIndex: number = -1;
   protected verbose: boolean = false;
+  protected isBacktest: boolean = false;
 
-  constructor(client: UpbitClient) {
+  constructor(client: UpbitClient, isBacktest: boolean = false) {
     this.client = client;
+    this.isBacktest = isBacktest;
   }
 
   /**
@@ -64,11 +66,31 @@ export abstract class BaseStrategy implements Strategy {
     stopMultiplier: number,
     minRiskReward: number = 1.5,
   ): { targetPrice: number; stopLossPrice: number } {
-    const entryPrice = candles.at(-1)!.close;
-    const atrNumber = atrValue ? Number(atrValue) : entryPrice * 0.02;
+    const lastCandle = candles.at(-1);
+    if (!lastCandle) {
+      throw new Error("캔들 데이터가 비어있습니다");
+    }
+
+    const entryPrice = lastCandle.close;
+    const DEFAULT_ATR_RATIO = 0.02; // 기본 ATR 비율 (2%)
+    const atrNumber = atrValue
+      ? Number(atrValue)
+      : entryPrice * DEFAULT_ATR_RATIO;
+
+    // ATR 값 유효성 검증
+    if (atrNumber <= 0) {
+      throw new Error(`유효하지 않은 ATR 값: ${atrNumber}`);
+    }
 
     let targetPrice = entryPrice + profitMultiplier * atrNumber;
     const stopLossPrice = entryPrice - stopMultiplier * atrNumber;
+
+    // 손절가가 진입가보다 높으면 안됨
+    if (stopLossPrice >= entryPrice) {
+      throw new Error(
+        `손절가(${stopLossPrice})가 진입가(${entryPrice})보다 높습니다`,
+      );
+    }
 
     // 최소 손익비 검증
     const riskReward =
@@ -84,10 +106,19 @@ export abstract class BaseStrategy implements Strategy {
    * 거래량 강도에 따른 포지션 사이징
    */
   protected calculatePositionSizing(volumeStrength: number): number {
-    if (volumeStrength >= 80) return 1.0;
-    if (volumeStrength >= 70) return 0.8;
-    if (volumeStrength >= 60) return 0.6;
-    return 0.4;
+    // 입력값 유효성 검증
+    if (volumeStrength < 0 || volumeStrength > 100) {
+      throw new Error(
+        `유효하지 않은 거래량 강도: ${volumeStrength} (0-100 범위여야 함)`,
+      );
+    }
+
+    // 거래량 강도에 따른 포지션 비율 결정
+    if (volumeStrength >= 80) return 1.0; // 매우 강함
+    if (volumeStrength >= 70) return 0.8; // 강함
+    if (volumeStrength >= 60) return 0.6; // 보통
+    if (volumeStrength >= 50) return 0.4; // 약함
+    return 0.2; // 매우 약함 (최소 포지션)
   }
 
   /**
@@ -98,33 +129,72 @@ export abstract class BaseStrategy implements Strategy {
     volume: number,
     sizing: PositionSizing,
   ): Promise<void> {
+    // 입력값 유효성 검증
+    if (!market || volume <= 0) {
+      throw new Error(
+        `유효하지 않은 주문 파라미터: market(${market}), volume(${volume})`,
+      );
+    }
+
+    if (sizing.volumeRatio <= 0 || sizing.volumeRatio > 1) {
+      throw new Error(
+        `유효하지 않은 볼륨 비율: ${sizing.volumeRatio} (0-1 범위여야 함)`,
+      );
+    }
+
+    if (
+      sizing.targetPrice <= sizing.entryPrice ||
+      sizing.stopLossPrice >= sizing.entryPrice
+    ) {
+      throw new Error(
+        `유효하지 않은 가격 설정: 진입(${sizing.entryPrice}), 목표(${sizing.targetPrice}), 손절(${sizing.stopLossPrice})`,
+      );
+    }
+
+    // 백테스트 모드에서는 실제 주문 실행하지 않음
+    if (this.isBacktest) {
+      if (this.verbose) {
+        console.log(
+          `[${this.name}] 백테스트 모드: 주문 시뮬레이션 - ${market}, 볼륨: ${
+            volume * sizing.volumeRatio
+          }`,
+        );
+      }
+      return;
+    }
+
     const adjustedVolume = volume * sizing.volumeRatio;
 
-    // 매수 주문
-    await this.client.createOrder({
-      market,
-      side: "bid",
-      volume: adjustedVolume.toString(),
-      ord_type: "market",
-    });
+    try {
+      // 매수 주문
+      await this.client.createOrder({
+        market,
+        side: "bid",
+        volume: adjustedVolume.toString(),
+        ord_type: "market",
+      });
 
-    // 목표가 매도 주문
-    await this.client.createOrder({
-      market,
-      side: "ask",
-      price: sizing.targetPrice.toFixed(0),
-      volume: adjustedVolume.toString(),
-      ord_type: "limit",
-    });
+      // 목표가 매도 주문
+      await this.client.createOrder({
+        market,
+        side: "ask",
+        price: sizing.targetPrice.toFixed(0),
+        volume: adjustedVolume.toString(),
+        ord_type: "limit",
+      });
 
-    // 손절 매도 주문
-    await this.client.createOrder({
-      market,
-      side: "ask",
-      price: sizing.stopLossPrice.toFixed(0),
-      volume: adjustedVolume.toString(),
-      ord_type: "limit",
-    });
+      // 손절 매도 주문
+      await this.client.createOrder({
+        market,
+        side: "ask",
+        price: sizing.stopLossPrice.toFixed(0),
+        volume: adjustedVolume.toString(),
+        ord_type: "limit",
+      });
+    } catch (error) {
+      console.error(`[${this.name}] 주문 실행 실패:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -156,11 +226,26 @@ export abstract class BaseStrategy implements Strategy {
    * 간단한 스톱로스/목표가 로직
    */
   async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    const currentPrice = candles.at(-1)!.close;
+    const lastCandle = candles.at(-1);
+    if (!lastCandle) {
+      throw new Error("캔들 데이터가 비어있습니다");
+    }
+
+    const currentPrice = lastCandle.close;
+
+    // 유효성 검증
+    if (entryPrice <= 0 || currentPrice <= 0) {
+      throw new Error(
+        `유효하지 않은 가격: 진입가(${entryPrice}), 현재가(${currentPrice})`,
+      );
+    }
 
     // 기본 3% 손절, 6% 익절
-    const stopLoss = entryPrice * 0.97;
-    const takeProfit = entryPrice * 1.06;
+    const STOP_LOSS_RATIO = 0.03; // 3%
+    const TAKE_PROFIT_RATIO = 0.06; // 6%
+
+    const stopLoss = entryPrice * (1 - STOP_LOSS_RATIO);
+    const takeProfit = entryPrice * (1 + TAKE_PROFIT_RATIO);
 
     return currentPrice <= stopLoss || currentPrice >= takeProfit;
   }

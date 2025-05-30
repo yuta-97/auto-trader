@@ -23,8 +23,12 @@ export class VolumeSpike extends BaseStrategy {
   private volumeEma: EMA;
   private priceEma: EMA;
 
-  constructor(client: UpbitClient, config: VolumeSpikeConfig) {
-    super(client);
+  constructor(
+    client: UpbitClient,
+    config: VolumeSpikeConfig,
+    isBacktest: boolean = false,
+  ) {
+    super(client, isBacktest);
     this.config = config;
     this.volumeEma = new EMA(this.config.volumeEmaPeriod);
     this.priceEma = new EMA(this.config.priceEmaPeriod);

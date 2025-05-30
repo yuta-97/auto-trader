@@ -3,7 +3,6 @@
  */
 export { BaseStrategy } from "../base/BaseStrategy";
 export { TechnicalIndicators } from "../indicators/TechnicalIndicators";
-export { VolumeAnalyzer } from "../indicators/VolumeAnalyzer";
 export { GridAnalyzer } from "../indicators/GridAnalyzer";
 
 export { TrendBreakout } from "./TrendBreakout";
@@ -14,7 +13,6 @@ export { MeanReversion } from "./MeanReversion";
 export { VolumeSpike } from "./VolumeSpike";
 
 // 타입 정의
-export type { VolumeAnalysisConfig } from "../indicators/VolumeAnalyzer";
 export type { GridConfig, GridLevels } from "../indicators/GridAnalyzer";
 export type {
   PositionSizing,

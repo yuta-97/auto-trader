@@ -23,8 +23,12 @@ export class MeanReversion extends BaseStrategy {
   private ema: EMA;
   private rsi: RSI;
 
-  constructor(client: UpbitClient, config: MeanReversionConfig) {
-    super(client);
+  constructor(
+    client: UpbitClient,
+    config: MeanReversionConfig,
+    isBacktest: boolean = false,
+  ) {
+    super(client, isBacktest);
     this.config = config;
     this.ema = new EMA(this.config.emaPeriod);
     this.rsi = new RSI(this.config.rsiPeriod);

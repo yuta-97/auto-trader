@@ -65,8 +65,9 @@ export class GridTrading extends BaseStrategy {
     gridLevels: any;
     atrValue: number;
   } {
-    const atrResult = this.atr.getResult();
-    const atrValue = atrResult ? Number(atrResult) : 0;
+    // BaseStrategy의 ATR 계산 활용 - 최신 값만 가져오기
+    const atrArray = this.calculateATR(candles, 14);
+    const atrValue = atrArray.length > 0 ? atrArray[atrArray.length - 1] : 0;
 
     // 박스권 여부 확인
     const isInSidewaysTrend = this.gridAnalyzer.isInSidewaysTrend(
@@ -89,10 +90,7 @@ export class GridTrading extends BaseStrategy {
   }
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
-    if (candles.length < this.config.volumeAnalysisPeriod) {
-      if (this.verbose) {
-        console.log("GridTrading: 충분한 데이터가 없음");
-      }
+    if (!this.validateCandleData(candles, this.config.volumeAnalysisPeriod)) {
       return false;
     }
 

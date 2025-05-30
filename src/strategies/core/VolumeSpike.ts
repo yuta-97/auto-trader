@@ -48,8 +48,10 @@ export class VolumeSpike extends BaseStrategy {
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
     if (
-      candles.length <
-      Math.max(this.config.volumeEmaPeriod, this.config.priceEmaPeriod) + 5
+      !this.validateCandleData(
+        candles,
+        Math.max(this.config.volumeEmaPeriod, this.config.priceEmaPeriod) + 5,
+      )
     ) {
       return false;
     }

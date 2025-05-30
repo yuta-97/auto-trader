@@ -6,8 +6,8 @@ import { BacktestDataProvider } from "./BacktestDataProvider";
 import { Backtester } from "./Backtester";
 import {
   TrendBreakout,
-  // RsiBollinger,
-  // GridTrading,
+  RsiBollinger,
+  GridTrading,
   // MomentumBreak,
   // MeanReversion,
   // VolumeSpike,
@@ -88,8 +88,8 @@ async function runBacktestStrategies(verbose: boolean = false) {
   // 전략들 초기화 (백테스트 모드로)
   const strategies = [
     new TrendBreakout(client, STRATEGY_CONFIG.TREND_BREAKOUT, true),
-    // new RsiBollinger(client, STRATEGY_CONFIG.RSI_BOLLINGER, true),
-    // new GridTrading(client, STRATEGY_CONFIG.GRID_TRADING, true),
+    new RsiBollinger(client, STRATEGY_CONFIG.RSI_BOLLINGER, true),
+    new GridTrading(client, STRATEGY_CONFIG.GRID_TRADING, true),
     // new MomentumBreak(client, STRATEGY_CONFIG.MOMENTUM_BREAK, true),
     // new MeanReversion(client, STRATEGY_CONFIG.MEAN_REVERSION, true),
     // new VolumeSpike(client, STRATEGY_CONFIG.VOLUME_SPIKE, true),

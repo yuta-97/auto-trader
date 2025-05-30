@@ -78,7 +78,7 @@ export class RsiBollinger extends BaseStrategy {
    * RSI 조건 체크
    */
   private checkRsiCondition(rsiValue: number): boolean {
-    if (!this.rsi.getResult()) {
+    if (!rsiValue) {
       if (this.verbose) {
         console.log("RsiBollinger: RSI 데이터 부족");
       }
@@ -148,12 +148,11 @@ export class RsiBollinger extends BaseStrategy {
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
     if (
-      candles.length <
-      Math.max(this.config.rsiPeriod, this.config.bbPeriod) + 5
+      !this.validateCandleData(
+        candles,
+        Math.max(this.config.rsiPeriod, this.config.bbPeriod) + 5,
+      )
     ) {
-      if (this.verbose) {
-        console.log("RsiBollinger: 충분한 데이터가 없음");
-      }
       return false;
     }
 
@@ -248,7 +247,7 @@ export class RsiBollinger extends BaseStrategy {
 
     const currentPrice = candles.at(-1).close;
 
-    // ATR 기반 동적 목표가/손절가
+    // ATR 기반 동적 목표가/손절가 - BaseStrategy 활용
     const atrValue = this.atr.getResult();
     const { targetPrice, stopLossPrice } = this.calculateTargetLevels(
       candles,

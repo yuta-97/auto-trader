@@ -47,8 +47,10 @@ export class MomentumBreak extends BaseStrategy {
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
     if (
-      candles.length <
-      Math.max(this.config.shortEmaPeriod, this.config.longEmaPeriod) + 2
+      !this.validateCandleData(
+        candles,
+        Math.max(this.config.shortEmaPeriod, this.config.longEmaPeriod) + 2,
+      )
     ) {
       return false;
     }

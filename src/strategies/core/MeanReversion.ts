@@ -48,8 +48,10 @@ export class MeanReversion extends BaseStrategy {
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
     if (
-      candles.length <
-      Math.max(this.config.emaPeriod, this.config.rsiPeriod) + 5
+      !this.validateCandleData(
+        candles,
+        Math.max(this.config.emaPeriod, this.config.rsiPeriod) + 5,
+      )
     ) {
       return false;
     }
@@ -60,8 +62,15 @@ export class MeanReversion extends BaseStrategy {
     });
 
     const currentPrice = candles[candles.length - 1].close;
-    const currentEma = Number(this.ema.getResult() || 0);
-    const currentRsi = Number(this.rsi.getResult() || 0);
+
+    // BaseStrategy의 EMA 계산 활용
+    const closePrices = candles.map(c => c.close);
+    const emaArray = this.calculateEMA(closePrices, this.config.emaPeriod);
+    const currentEma = emaArray.length > 0 ? emaArray[emaArray.length - 1] : 0;
+
+    // BaseStrategy의 RSI 계산 활용
+    const rsiArray = this.calculateRSI(closePrices, this.config.rsiPeriod);
+    const currentRsi = rsiArray.length > 0 ? rsiArray[rsiArray.length - 1] : 0;
 
     if (currentEma === 0 || currentRsi === 0) {
       return false;

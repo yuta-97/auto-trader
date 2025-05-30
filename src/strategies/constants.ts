@@ -8,6 +8,7 @@ export const MARKETS = {
   ETH: "KRW-ETH",
   SOL: "KRW-SOL",
   XRP: "KRW-XRP",
+  USDT: "KRW-USDT",
 };
 
 // 거래량 설정 (BTC 기준)

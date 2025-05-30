@@ -4,8 +4,9 @@ import { BaseStrategy } from "../base/BaseStrategy";
 
 export interface TrendBreakoutConfig {
   kFactor: number; // 돌파계수 (일반적으로 0.5~1.0)
-  lookbackDays: number; // 전일 기준 (몇 개 캔들 전)
-  holdingPeriod: number; // 보유 기간 (몇 개 캔들 후 매도)
+  windowHours: number; // 변동폭 계산 시간 (시간) - 예: 24 = 최근 24시간
+  profitTarget: number; // 수익 실현 비율 (%) - 예: 3 = 3% 상승시 매도
+  stopLoss: number; // 손절 비율 (%) - 예: 2 = 2% 하락시 매도
 }
 
 export class TrendBreakout extends BaseStrategy {
@@ -13,66 +14,114 @@ export class TrendBreakout extends BaseStrategy {
 
   private config: TrendBreakoutConfig;
   private entryPrice: number | null = null;
-  private entryIndex: number = -1;
 
   constructor(
     client: UpbitClient,
-    config?: Partial<TrendBreakoutConfig>,
+    config?: TrendBreakoutConfig,
     isBacktest: boolean = false,
   ) {
     super(client, isBacktest);
 
     // 기본 설정
-    this.config = {
-      kFactor: 0.5, // 돌파계수 (50%)
-      lookbackDays: 1, // 전일(1개 캔들 전) 기준
-      holdingPeriod: 1, // 다음날(1개 캔들 후) 매도
-      ...config,
-    };
-
-    // 백테스트 모드에서는 verbose 활성화
-    this.verbose = isBacktest;
+    this.config = config;
   }
 
   /**
-   * 전일 변동폭 계산
+   * 최근 N시간 변동폭 계산
+   * @param candles 캔들 데이터
+   * @param index 현재 인덱스
+   * @returns 최근 windowHours 시간동안의 변동폭 (high - low)
    */
-  private calculatePreviousRange(
+  private calculateRecentRange(
     candles: Candle[],
     index: number,
   ): number | null {
-    const prevIndex = index - this.config.lookbackDays;
-    if (prevIndex < 0) return null;
+    if (index < 1) return null;
 
-    const prevCandle = candles[prevIndex];
-    return prevCandle.high - prevCandle.low;
+    const currentCandle = candles[index];
+    const windowMs = this.config.windowHours * 60 * 60 * 1000; // windowHours를 밀리초로 변환
+    const startTime = currentCandle.timestamp - windowMs;
+
+    if (this.verbose) {
+      console.log(
+        `TrendBreakout: 변동폭 계산 - 현재: ${new Date(
+          currentCandle.timestamp,
+        ).toISOString()}, 시작: ${new Date(startTime).toISOString()}`,
+      );
+    }
+
+    // 최근 windowHours 시간 범위의 캔들들 찾기
+    const recentCandles = candles.slice(0, index + 1).filter(candle => {
+      return candle.timestamp >= startTime;
+    });
+
+    if (recentCandles.length === 0) {
+      if (this.verbose) {
+        console.log(
+          `TrendBreakout: 최근 ${this.config.windowHours}시간 데이터 없음`,
+        );
+      }
+      return null;
+    }
+
+    // 해당 기간의 최고가와 최저가 찾기
+    const periodHigh = Math.max(...recentCandles.map(c => c.high));
+    const periodLow = Math.min(...recentCandles.map(c => c.low));
+    const range = periodHigh - periodLow;
+
+    if (this.verbose) {
+      console.log(
+        `TrendBreakout: 최근 ${
+          this.config.windowHours
+        }시간 변동폭 - 고가: ${periodHigh}, 저가: ${periodLow}, 변동폭: ${range.toFixed(
+          2,
+        )} (캔들수: ${recentCandles.length})`,
+      );
+    }
+
+    return range;
   }
 
   /**
-   * 매수 목표가 계산
-   * 당일 시가 + 변동폭 × 돌파계수
+   * 매수 목표가 계산 (시간 단위 기반)
+   * 이전 캔들들의 변동폭을 기반으로 현재 캔들에서의 돌파 목표가 계산
    */
   private calculateBuyTarget(candles: Candle[], index: number): number | null {
-    if (index < this.config.lookbackDays) return null;
+    if (index < 1) return null;
 
     const currentCandle = candles[index];
-    const range = this.calculatePreviousRange(candles, index);
+
+    // 이전 인덱스를 기준으로 최근 변동폭 계산 (현재 캔들 제외)
+    const range = this.calculateRecentRange(candles, index - 1);
 
     if (!range || range <= 0) return null;
 
-    return currentCandle.open + range * this.config.kFactor;
+    // 현재 캔들의 시가를 기준점으로 사용
+    const referencePrice = currentCandle.open;
+    const target = referencePrice + range * this.config.kFactor;
+
+    if (this.verbose) {
+      console.log(
+        `TrendBreakout: 목표가 계산 - 기준가(시가): ${referencePrice}, 최근변동폭: ${range.toFixed(
+          2,
+        )}, 돌파계수: ${this.config.kFactor}, 목표가: ${target.toFixed(2)}`,
+      );
+    }
+
+    return target;
   }
 
   async shouldEnter(candles: Candle[]): Promise<boolean> {
-    if (candles.length < this.config.lookbackDays + 1) {
+    if (candles.length < 2) {
+      // 최소 2개 캔들 필요 (전일, 당일)
       if (this.verbose) {
-        console.log("TrendBreakout: 충분한 데이터가 없음");
+        console.log("TrendBreakout: 충분한 데이터가 없음 (최소 2개 캔들 필요)");
       }
       return false;
     }
 
-    // 이미 포지션이 있으면 진입 안함
-    if (this.entryPrice !== null) {
+    // 실거래 모드에서만 포지션 체크 (백테스트는 백테스터가 관리)
+    if (!this.isBacktest && this.entryPrice !== null) {
       return false;
     }
 
@@ -91,26 +140,28 @@ export class TrendBreakout extends BaseStrategy {
     const isPriceBreakout = currentCandle.high >= buyTarget;
 
     if (this.verbose && isPriceBreakout) {
-      const prevRange = this.calculatePreviousRange(candles, currentIndex);
+      const recentRange = this.calculateRecentRange(candles, currentIndex - 1);
       console.log(`TrendBreakout: 돌파 발생!`);
       console.log(
-        `- 시가: ${currentCandle.open}, 현재가: ${currentCandle.close}`,
+        `- 시가: ${currentCandle.open}, 현재가: ${currentCandle.close}, 고가: ${currentCandle.high}`,
       );
       console.log(
-        `- 전일 변동폭: ${prevRange?.toFixed(2)}, 목표가: ${buyTarget.toFixed(
+        `- 최근 ${this.config.windowHours}시간 변동폭: ${recentRange?.toFixed(
           2,
-        )}`,
+        )}, 목표가: ${buyTarget.toFixed(2)}`,
       );
       console.log(`- 돌파계수: ${this.config.kFactor}`);
     } else if (this.verbose) {
-      const prevRange = this.calculatePreviousRange(candles, currentIndex);
+      const recentRange = this.calculateRecentRange(candles, currentIndex - 1);
       console.log(
         `TrendBreakout: [${currentIndex}] 시가: ${currentCandle.open}, 고가: ${currentCandle.high}, 현재가: ${currentCandle.close}`,
       );
       console.log(
-        `TrendBreakout: 전일 변동폭: ${prevRange?.toFixed(
+        `TrendBreakout: 최근 ${
+          this.config.windowHours
+        }시간 변동폭: ${recentRange?.toFixed(2)}, 목표가: ${buyTarget.toFixed(
           2,
-        )}, 목표가: ${buyTarget.toFixed(2)}, 돌파여부: ${isPriceBreakout}`,
+        )}, 돌파여부: ${isPriceBreakout}`,
       );
     }
 
@@ -124,17 +175,11 @@ export class TrendBreakout extends BaseStrategy {
   ): Promise<void> {
     const currentIndex = candles.length - 1;
     const currentCandle = candles[currentIndex];
-    const buyTarget = this.calculateBuyTarget(candles, currentIndex);
 
-    if (!buyTarget) {
-      throw new Error("매수 목표가 계산 실패");
-    }
+    // 실제 진입은 현재 캔들의 종가로 설정 (실제 거래에서는 돌파 확인 후 즉시 매수)
+    this.entryPrice = currentCandle.close;
 
-    // 진입가는 돌파가격(목표가) 또는 현재가 중 높은 값
-    this.entryPrice = Math.max(buyTarget, currentCandle.close);
-    this.entryIndex = currentIndex;
-
-    // 단순한 시장가 매수 (다음날 시가 매도 전략이므로 복잡한 목표가/손절가 설정 불필요)
+    // 단순한 시장가 매수 (가격 기반 매도 전략이므로 복잡한 목표가/손절가 설정 불필요)
     if (!this.isBacktest) {
       await this.client.createOrder({
         market,
@@ -145,41 +190,73 @@ export class TrendBreakout extends BaseStrategy {
     }
 
     if (this.verbose) {
+      const buyTarget = this.calculateBuyTarget(candles, currentIndex);
       console.log(
-        `TrendBreakout: ${market} 진입 - 가격: ${
+        `TrendBreakout: ${market} 진입 - 실제진입가: ${
           this.entryPrice
-        }, 목표가: ${buyTarget.toFixed(2)}`,
+        }, 목표가: ${buyTarget?.toFixed(2)}`,
       );
     }
   }
 
   /**
-   * 종료 조건: 보유 기간 경과시 매도
+   * 종료 조건: 수익 실현 또는 손절
    */
   async shouldExit(candles: Candle[], entryPrice: number): Promise<boolean> {
-    if (this.entryPrice === null || this.entryIndex === -1) {
-      return false;
+    const currentCandle = candles[candles.length - 1];
+    const currentPrice = currentCandle.close;
+
+    // 수익률 계산
+    const profitPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+
+    // 수익 실현 조건
+    if (profitPercent >= this.config.profitTarget) {
+      if (this.verbose) {
+        console.log(
+          `TrendBreakout: 수익 목표(${
+            this.config.profitTarget
+          }%) 달성! 현재 수익률: ${profitPercent.toFixed(2)}%`,
+        );
+      }
+
+      // 실거래 모드에서만 내부 상태 초기화 (백테스트는 백테스터가 관리)
+      if (!this.isBacktest) {
+        this.entryPrice = null;
+      }
+
+      return true;
     }
 
-    const currentIndex = candles.length - 1;
-    const holdingDuration = currentIndex - this.entryIndex;
+    // 손절 조건
+    if (profitPercent <= -this.config.stopLoss) {
+      if (this.verbose) {
+        console.log(
+          `TrendBreakout: 손절 기준(${
+            this.config.stopLoss
+          }%) 도달! 현재 수익률: ${profitPercent.toFixed(2)}%`,
+        );
+      }
 
-    // 보유 기간이 지나면 매도
-    const shouldExitByTime = holdingDuration >= this.config.holdingPeriod;
+      // 실거래 모드에서만 내부 상태 초기화 (백테스트는 백테스터가 관리)
+      if (!this.isBacktest) {
+        this.entryPrice = null;
+      }
 
-    if (this.verbose && shouldExitByTime) {
+      return true;
+    }
+
+    // 백테스트 모드에서만 상세 로그 출력
+    if (this.verbose && this.isBacktest) {
       console.log(
-        `TrendBreakout: 보유 기간(${this.config.holdingPeriod}) 경과로 매도`,
+        `TrendBreakout: 진입가: ${entryPrice}, 현재가: ${currentPrice}, 수익률: ${profitPercent.toFixed(
+          2,
+        )}% (목표: +${this.config.profitTarget}%, 손절: -${
+          this.config.stopLoss
+        }%)`,
       );
     }
 
-    // 매도시 포지션 초기화
-    if (shouldExitByTime) {
-      this.entryPrice = null;
-      this.entryIndex = -1;
-    }
-
-    return shouldExitByTime;
+    return false;
   }
 
   /**

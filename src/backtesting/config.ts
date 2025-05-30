@@ -3,10 +3,10 @@ import { CANDLE_INTERVAL, MARKETS } from "../strategies/constants";
 // ===== 백테스트 설정 (직접 수정해서 사용) =====
 const BACKTEST_CONFIG = {
   // 테스트할 마켓 (MARKETS.BTC, MARKETS.ETH 등)
-  MARKET: MARKETS.XRP,
+  MARKET: MARKETS.ETH,
 
   // 캔들 간격 (CANDLE_INTERVAL.MIN_3, MIN_5, MIN_15, MIN_30 등)
-  INTERVAL: CANDLE_INTERVAL.MIN_1,
+  INTERVAL: CANDLE_INTERVAL.MIN_3,
 
   // 초기 자본 (원)
   INITIAL_CAPITAL: 1000000, // 100만원
@@ -27,9 +27,10 @@ const STRATEGY_CONFIG = {
   },
 
   TREND_BREAKOUT: {
-    kFactor: 0.5, // 돌파계수 (50%)
-    lookbackDays: 1, // 전일(1개 캔들 전) 기준
-    holdingPeriod: 1, // 다음날(1개 캔들 후) 매도
+    kFactor: 0.3,
+    windowHours: 1, // 변동폭 계산 시간 (시간)
+    profitTarget: 2.0,
+    stopLoss: 1.5,
   },
 
   GRID_TRADING: {
